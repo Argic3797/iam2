@@ -3,7 +3,7 @@ export async function searchPlace(query: string) {
   const clientSecret = import.meta.env.VITE_NAVER_SEARCH_CLIENT_SECRET;
 
   const encodedQuery = encodeURIComponent(query);
-  const url = `/v1/search/local.json?query=${encodedQuery}&display=5`;
+  const url = `/v1/search/local?query=${encodedQuery}&display=5`;
 
   const res = await fetch(url, {
     headers: {

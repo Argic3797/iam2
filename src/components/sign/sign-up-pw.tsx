@@ -143,7 +143,7 @@ function SignUPP() {
                             variant="xbutton"
                             size="icon"
                             className="absolute right-2 top-1/2 -translate-y-1/2 text-black"
-                            onClick={() => form.setValue("password", "")}
+                            onClick={() => form.setValue("confirmPassword", "")}
                           >
                             <X className={"icon"} />
                           </Button>

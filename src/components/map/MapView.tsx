@@ -14,7 +14,6 @@ const MapView = forwardRef<MapViewHandle>((_, ref) => {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
-  const directionsServiceRef = useRef<any>(null);
   const routeRef = useRef<any>(null);
 
   useEffect(() => {
@@ -25,11 +24,8 @@ const MapView = forwardRef<MapViewHandle>((_, ref) => {
           center: new window.naver.maps.LatLng(37.5665, 126.978),
           zoom: 15,
         });
-        // Directions 서비스 초기화 (타입 안전성 확보)
-        const Service = (window as any).naver.maps.Service;
-        if (Service?.Directions) {
-          directionsServiceRef.current = new Service.Directions();
-        }
+        // Directions 서비스는 별도로 처리
+        console.log("지도 초기화 완료 - Directions API는 별도 호출");
         clearInterval(timer);
       }
     };
@@ -68,42 +64,74 @@ const MapView = forwardRef<MapViewHandle>((_, ref) => {
         onComplete?: (summary: { distance: number; duration: number }) => void
       ) {
         console.log(" routeTo 호출됨", start, "→", goal);
-        if (!directionsServiceRef.current || !mapRef.current) return;
+
+        if (!mapRef.current) {
+          console.error("지도가 초기화되지 않았습니다");
+          return;
+        }
+
         clearRoute();
-        directionsServiceRef.current.route(
-          {
-            start: new window.naver.maps.LatLng(start.lat, start.lng),
-            goal: new window.naver.maps.LatLng(goal.lat, goal.lng),
+
+        // 네이버 Directions API 호출 (프록시 사용)
+        const clientId = "h52y5k093u";
+        const clientSecret = "Kwd07fmmkH3TtVF4ISh21MtkYi7O4dX3GokRCk3w";
+        const url = `/map-direction/driving?start=${start.lng},${start.lat}&goal=${goal.lng},${goal.lat}&option=traoptimal`;
+
+        fetch(url, {
+          headers: {
+            "x-ncp-apigw-api-key-id": clientId,
+            "x-ncp-apigw-api-key": clientSecret,
           },
-          (status: any, response: any) => {
-            console.log(" 길찾기 응답 수신, status:", status);
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            console.log("Directions API 응답:", data);
+
             if (
-              status === window.naver.maps.Service.Status.OK &&
-              response.routes?.length
+              data.code === 0 &&
+              data.route &&
+              data.route.traoptimal &&
+              data.route.traoptimal.length > 0
             ) {
-              const path = response.routes[0].path.map(
-                (p: any) => new window.naver.maps.LatLng(p.y, p.x)
+              const route = data.route.traoptimal[0];
+              const path = route.path.map(
+                (point: any) => new window.naver.maps.LatLng(point[1], point[0])
               );
+
               routeRef.current = new window.naver.maps.Polyline({
                 map: mapRef.current,
                 path,
                 strokeWeight: 5,
                 strokeColor: "red",
               });
+
               console.log(
                 "경로라인이 그려졌습니다, segment 개수:",
                 path.length
               );
-              const summary = response.routes[0].summary;
+
+              const summary = route.summary;
               onComplete?.({
-                distance: summary.distance, //  meters
-                duration: summary.duration, //  seconds
+                distance: summary.distance, // 미터 단위
+                duration: summary.duration, // 밀리초 단위
+              });
+
+              console.log("경로 정보:", {
+                거리: `${(summary.distance / 1000).toFixed(2)}km`,
+                소요시간: `${Math.ceil(summary.duration / 1000 / 60)}분`,
+                톨게이트요금: `${summary.tollFare?.toLocaleString()}원`,
+                택시요금: `${summary.taxiFare?.toLocaleString()}원`,
+                유류비: `${summary.fuelPrice?.toLocaleString()}원`,
               });
             } else {
-              console.error("경로 탐색 실패:", status, response);
+              console.error("경로 탐색 실패:", data);
+              alert(`경로를 찾을 수 없습니다. (코드: ${data.code})`);
             }
-          }
-        );
+          })
+          .catch((error) => {
+            console.error("Directions API 호출 실패:", error);
+            alert("경로 검색 중 오류가 발생했습니다.");
+          });
       },
       clearRoute,
     };

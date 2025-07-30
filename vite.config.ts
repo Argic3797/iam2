@@ -25,6 +25,13 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/map-geocode/, "/map-geocode"),
         secure: false,
       },
+      "/map-direction": {
+        target: "https://maps.apigw.ntruss.com",
+        changeOrigin: true,
+        rewrite: (path) =>
+          path.replace(/^\/map-direction/, "/map-direction/v1"),
+        secure: false,
+      },
     },
   },
 });

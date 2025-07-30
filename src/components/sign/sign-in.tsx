@@ -149,7 +149,7 @@ function SignIN() {
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="absolute top-7 right-1 bg-transparent hover:bg-transparent"
+                    className="absolute top-8 right-2 bg-transparent hover:bg-transparent"
                     onClick={handleTogglePassword}
                   >
                     {showPassword ? (

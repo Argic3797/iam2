@@ -9,7 +9,11 @@ function Home() {
   const [query, setQuery] = useState("");
   const [places, setPlaces] = useState<any[]>([]);
   const mapRef = useRef<MapViewHandle>(null);
-  const [myPos, setMyPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [myPos, setMyPos] = useState<{
+    lat: number;
+    lng: number;
+    accuracy?: number;
+  } | null>(null);
 
   const [selectedDest, setSelectedDest] = useState<{
     lat: number;
@@ -30,7 +34,8 @@ function Home() {
       (pos) => {
         const latitude = pos.coords.latitude;
         const longitude = pos.coords.longitude;
-        setMyPos({ lat: latitude, lng: longitude });
+        const accuracy = pos.coords.accuracy;
+        setMyPos({ lat: latitude, lng: longitude, accuracy });
 
         // mapRef가 준비될 때까지 재시도
         const tryMove = () => {
@@ -45,28 +50,49 @@ function Home() {
       (err) => {
         console.error("내 위치 가져오기 실패:", err);
       },
-      { enableHighAccuracy: true }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
     );
   }, []);
 
   const handleSearch = async () => {
+    if (!query.trim()) {
+      alert("검색어를 입력해주세요.");
+      return;
+    }
+
     try {
       const data = await searchPlace(query);
+      console.log("검색 결과:", data);
+
+      if (!data || data.length === 0) {
+        alert("검색 결과가 없습니다.");
+        return;
+      }
+
       setPlaces(data);
 
       if (data.length > 0) {
         const first = data[0];
-        const x = parseFloat(first.mapx);
-        const y = parseFloat(first.mapy);
+        if (first.mapx && first.mapy) {
+          const x = parseFloat(first.mapx) / 10000000;
+          const y = parseFloat(first.mapy) / 10000000;
 
-        // 지도를 해당 위치로 이동
-        if (mapRef.current) {
-          mapRef.current.moveTo(y, x);
+          // 지도를 해당 위치로 이동
+          if (mapRef.current) {
+            mapRef.current.moveTo(y, x);
+          }
         }
       }
     } catch (err) {
-      console.error(err);
-      alert("장소 검색 중 오류 발생");
+      console.error("검색 오류:", err);
+      alert(
+        "장소 검색 중 오류 발생: " +
+          (err instanceof Error ? err.message : "알 수 없는 오류")
+      );
     }
   };
 
@@ -76,7 +102,14 @@ function Home() {
 
       {myPos && (
         <div className="absolute top-20 right-4 bg-white p-2 rounded shadow">
-          내 위치: {myPos.lat.toFixed(6)}, {myPos.lng.toFixed(6)}
+          <div>
+            내 위치: {myPos.lat.toFixed(6)}, {myPos.lng.toFixed(6)}
+          </div>
+          {myPos.accuracy && (
+            <div className="text-sm text-gray-600">
+              정확도: ±{Math.round(myPos.accuracy)}m
+            </div>
+          )}
         </div>
       )}
 
@@ -108,11 +141,25 @@ function Home() {
             if (!myPos || !selectedDest) {
               return alert("출발지(내 위치)와 도착지를 모두 선택해주세요.");
             }
-            mapRef.current?.routeTo(
-              { lat: myPos.lat, lng: myPos.lng },
-              { lat: selectedDest.lat, lng: selectedDest.lng },
-              (summary) => setRouteInfo(summary)
-            );
+
+            console.log("경로 검색 시작:", {
+              출발지: { lat: myPos.lat, lng: myPos.lng },
+              도착지: { lat: selectedDest.lat, lng: selectedDest.lng },
+            });
+
+            try {
+              mapRef.current?.routeTo(
+                { lat: myPos.lat, lng: myPos.lng },
+                { lat: selectedDest.lat, lng: selectedDest.lng },
+                (summary) => {
+                  console.log("경로 검색 완료:", summary);
+                  setRouteInfo(summary);
+                }
+              );
+            } catch (error) {
+              console.error("경로 검색 버튼 오류:", error);
+              alert("경로 검색 중 오류가 발생했습니다.");
+            }
           }}
           disabled={!selectedDest}
           className={`mt-2 px-4 py-2 rounded text-white ${
@@ -125,7 +172,7 @@ function Home() {
         {routeInfo && (
           <div className="p-4 bg-white rounded shadow mt-4">
             <p>총 거리: {(routeInfo.distance / 1000).toFixed(2)} km</p>
-            <p>소요 시간: {Math.ceil(routeInfo.duration / 60)} 분</p>
+            <p>소요 시간: {Math.ceil(routeInfo.duration / 1000 / 60)} 분</p>
           </div>
         )}
 
@@ -136,14 +183,38 @@ function Home() {
               className="border-b pb-2 cursor-pointer hover:bg-gray-100"
               onClick={async () => {
                 try {
+                  console.log("선택된 장소:", item);
+
+                  // 이미 좌표가 있는 경우 사용
+                  if (item.mapx && item.mapy) {
+                    // 네이버 좌표를 올바른 형식으로 변환 (문자열을 소수점 좌표로)
+                    const rawLat = parseFloat(item.mapy);
+                    const rawLng = parseFloat(item.mapx);
+                    const lat = rawLat / 10000000;
+                    const lng = rawLng / 10000000;
+
+                    console.log("원본 좌표:", { rawLat, rawLng });
+                    console.log("변환된 좌표:", { lat, lng });
+
+                    mapRef.current?.moveTo(lat, lng);
+                    setSelectedDest({ lat, lng });
+                    console.log("좌표 사용:", { lat, lng });
+                    return;
+                  }
+
+                  // 좌표가 없는 경우 주소로 변환
                   const coords = await geocodeAddress(item.roadAddress);
-                  //  지도 이동 & 마커 표시
                   mapRef.current?.moveTo(coords.lat, coords.lng);
-                  //  선택된 목적지 저장
                   setSelectedDest({ lat: coords.lat, lng: coords.lng });
+                  console.log("주소 변환 결과:", coords);
                 } catch (error) {
                   console.error("주소 변환 실패:", error);
-                  alert("선택한 장소의 좌표를 가져올 수 없습니다.");
+                  alert(
+                    "선택한 장소의 좌표를 가져올 수 없습니다: " +
+                      (error instanceof Error
+                        ? error.message
+                        : "알 수 없는 오류")
+                  );
                 }
               }}
             >
